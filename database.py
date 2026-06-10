@@ -26,6 +26,18 @@ class CVKaydi(Base):
     yukleme_tarihi = Column(DateTime, default=datetime.utcnow)
 
 
+class IsIlani(Base):
+    __tablename__ = "is_ilanlari"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pozisyon_adi = Column(String(255), nullable=False)
+    sirket_adi = Column(String(255), nullable=True)
+    deneyim_yili = Column(String(100), nullable=True)
+    ham_metin = Column(String, nullable=False)
+    analiz = Column(JSON, nullable=False)
+    eklenme_tarihi = Column(DateTime, default=datetime.utcnow)
+
+
 def get_db():
     db = SessionLocal()
     try:
