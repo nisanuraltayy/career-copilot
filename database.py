@@ -37,6 +37,15 @@ class IsIlani(Base):
     analiz = Column(JSON, nullable=False)
     eklenme_tarihi = Column(DateTime, default=datetime.utcnow)
 
+class MotivasyonMektubu(Base):
+    __tablename__ = "motivasyon_mektuplari"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cv_id = Column(Integer, nullable=False)
+    is_ilani_id = Column(Integer, nullable=False)
+    mektup_metni = Column(String, nullable=False)
+    olusturma_tarihi = Column(DateTime, default=datetime.utcnow)  
+
 
 def get_db():
     db = SessionLocal()

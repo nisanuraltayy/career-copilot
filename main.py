@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import os
 import json
 from sqlalchemy.orm import Session
-from database import get_db, CVKaydi, IsIlani
+from database import get_db, CVKaydi, IsIlani, MotivasyonMektubu
 
 
 load_dotenv()
@@ -22,6 +22,9 @@ class UyumAnaliziIstegi(BaseModel):
     cv_id: int
     is_ilani_id: int
 
+class MotivasyonMektubuIstegi(BaseModel):
+    cv_id: int
+    is_ilani_id: int
 
 app = FastAPI(title="Career Copilot", version="0.1.0")
 
@@ -326,4 +329,76 @@ Sadece JSON dondur, baska aciklama ekleme. Su formatta:
         "is_ilani_id": ilan.id,
         "v1_basit": v1_sonuc,
         "v2_llm": v2_sonuc,
+    }
+@app.post("/motivasyon-mektubu")
+def motivasyon_mektubu_uret(
+    istek: MotivasyonMektubuIstegi,
+    db: Session = Depends(get_db),
+):
+    cv = db.query(CVKaydi).filter(CVKaydi.id == istek.cv_id).first()
+    if cv is None:
+        return {"hata": f"CV bulunamadi (id={istek.cv_id})."}
+
+    ilan = db.query(IsIlani).filter(IsIlani.id == istek.is_ilani_id).first()
+    if ilan is None:
+        return {"hata": f"Is ilani bulunamadi (id={istek.is_ilani_id})."}
+
+    cv_beceriler = cv.analiz.get("beceriler", []) if cv.analiz else []
+    cv_deneyimler = cv.analiz.get("deneyimler", []) if cv.analiz else []
+    cv_egitim = cv.analiz.get("egitim", "") if cv.analiz else ""
+
+    pozisyon = ilan.pozisyon_adi
+    sirket = ilan.sirket_adi or "ilgili sirket"
+    gerekli_beceriler = ilan.analiz.get("gerekli_beceriler", []) if ilan.analiz else []
+
+    prompt = f"""Asagidaki bilgilerle profesyonel ve samimi bir motivasyon mektubu yaz.
+
+ADAY BILGILERI:
+- Beceriler: {cv_beceriler}
+- Deneyimler: {cv_deneyimler}
+- Egitim: {cv_egitim}
+
+BASVURULAN POZISYON:
+- Pozisyon: {pozisyon}
+- Sirket: {sirket}
+- Aranan beceriler: {gerekli_beceriler}
+
+KURALLAR:
+- Turkce yaz.
+- 200-300 kelime arasi olsun.
+- "Sayin Yetkili," ile basla.
+- 3-4 paragraf.
+- Adayin guclu yonlerini one cikar, ama yalan/abartma yapma.
+- "Saygilarimla, [Ad Soyad]" ile bitir.
+- Sadece mektup metnini dondur, baska aciklama ekleme.
+"""
+
+    try:
+        yanit = client.models.generate_content(
+            model="gemini-flash-latest",
+            contents=prompt,
+        )
+        mektup_metni = yanit.text.strip()
+    except Exception as e:
+        return {
+            "hata": "AI servisi su an yanit veremiyor. Lutfen birkac dakika sonra tekrar deneyin.",
+            "teknik_detay": str(e),
+        }
+
+    yeni_mektup = MotivasyonMektubu(
+        cv_id=cv.id,
+        is_ilani_id=ilan.id,
+        mektup_metni=mektup_metni,
+    )
+    db.add(yeni_mektup)
+    db.commit()
+    db.refresh(yeni_mektup)
+
+    return {
+        "id": yeni_mektup.id,
+        "cv_id": cv.id,
+        "is_ilani_id": ilan.id,
+        "pozisyon": pozisyon,
+        "sirket": sirket,
+        "mektup_metni": mektup_metni,
     }
