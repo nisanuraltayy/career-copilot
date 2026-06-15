@@ -402,3 +402,37 @@ KURALLAR:
         "sirket": sirket,
         "mektup_metni": mektup_metni,
     }
+@app.get("/motivasyon-mektubu-gecmis")
+def motivasyon_mektubu_gecmis(
+    limit: int = 10,
+    cv_id: int | None = None,
+    is_ilani_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    sorgu = db.query(MotivasyonMektubu)
+
+    if cv_id is not None:
+        sorgu = sorgu.filter(MotivasyonMektubu.cv_id == cv_id)
+
+    if is_ilani_id is not None:
+        sorgu = sorgu.filter(MotivasyonMektubu.is_ilani_id == is_ilani_id)
+
+    mektuplar = (
+        sorgu.order_by(MotivasyonMektubu.olusturma_tarihi.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "toplam_donen": len(mektuplar),
+        "mektuplar": [
+            {
+                "id": m.id,
+                "cv_id": m.cv_id,
+                "is_ilani_id": m.is_ilani_id,
+                "mektup_metni": m.mektup_metni,
+                "olusturma_tarihi": m.olusturma_tarihi.isoformat(),
+            }
+            for m in mektuplar
+        ],
+    }   
