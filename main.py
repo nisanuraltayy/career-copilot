@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 
 from routers import cv, ilan, uyum, mektup
+from database import Base, engine
 
 app = FastAPI(title="Career Copilot", version="0.2.0")
+
+Base.metadata.create_all(bind=engine)
 
 app.include_router(cv.router)
 app.include_router(ilan.router)
