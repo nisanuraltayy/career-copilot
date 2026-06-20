@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from database import get_db, CVKaydi, IsIlani
+from database import get_db, CVKaydi, IsIlani, UyumAnalizi
 from services.gemini_service import gemini_json_uret
 
 router = APIRouter()
@@ -96,9 +96,57 @@ Sadece JSON dondur, baska aciklama ekleme. Su formatta:
             "teknik_detay": str(e),
         }
 
+    yeni_analiz = UyumAnalizi(
+        cv_id=cv.id,
+        is_ilani_id=ilan.id,
+        v1_sonuc=v1_sonuc,
+        v2_sonuc=v2_sonuc,
+    )
+    db.add(yeni_analiz)
+    db.commit()
+    db.refresh(yeni_analiz)
+
     return {
+        "id": yeni_analiz.id,
         "cv_id": cv.id,
         "is_ilani_id": ilan.id,
         "v1_basit": v1_sonuc,
         "v2_llm": v2_sonuc,
+    }
+
+
+@router.get("/uyum-analizi-gecmis")
+def uyum_analizi_gecmis(
+    limit: int = 10,
+    cv_id: int | None = None,
+    is_ilani_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    sorgu = db.query(UyumAnalizi)
+
+    if cv_id is not None:
+        sorgu = sorgu.filter(UyumAnalizi.cv_id == cv_id)
+
+    if is_ilani_id is not None:
+        sorgu = sorgu.filter(UyumAnalizi.is_ilani_id == is_ilani_id)
+
+    analizler = (
+        sorgu.order_by(UyumAnalizi.olusturma_tarihi.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "toplam_donen": len(analizler),
+        "analizler": [
+            {
+                "id": a.id,
+                "cv_id": a.cv_id,
+                "is_ilani_id": a.is_ilani_id,
+                "v1_sonuc": a.v1_sonuc,
+                "v2_sonuc": a.v2_sonuc,
+                "olusturma_tarihi": a.olusturma_tarihi.isoformat(),
+            }
+            for a in analizler
+        ],
     }

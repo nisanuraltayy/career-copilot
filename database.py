@@ -44,6 +44,16 @@ class MotivasyonMektubu(Base):
     cv_id = Column(Integer, nullable=False)
     is_ilani_id = Column(Integer, nullable=False)
     mektup_metni = Column(String, nullable=False)
+    olusturma_tarihi = Column(DateTime, default=datetime.utcnow)
+
+class UyumAnalizi(Base):
+    __tablename__ = "uyum_analizleri"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cv_id = Column(Integer, nullable=False)
+    is_ilani_id = Column(Integer, nullable=False)
+    v1_sonuc = Column(JSON, nullable=False)
+    v2_sonuc = Column(JSON, nullable=False)
     olusturma_tarihi = Column(DateTime, default=datetime.utcnow)  
 
 
