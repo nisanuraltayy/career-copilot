@@ -4,9 +4,31 @@ from io import BytesIO
 from sqlalchemy.orm import Session
 
 from database import get_db, CVKaydi
-from services.gemini_service import gemini_json_uret
+from services.gemini_service import gemini_json_uret, gemini_embedding_uret
 
 router = APIRouter()
+
+
+def _cv_analizden_metin(analiz: dict) -> str:
+    """CV analiz JSON'unu embedding icin temiz, duz metne cevirir.
+    JSON sozdizimi degil, sadece anlam tasiyan icerik gonderilir.
+    analiz beklenmedik format donerse bile cokmez (defensive)."""
+    parcalar = []
+
+    beceriler = analiz.get("beceriler")
+    if isinstance(beceriler, list) and beceriler:
+        parcalar.append("Beceriler: " + ", ".join(str(b) for b in beceriler))
+
+    deneyimler = analiz.get("deneyimler")
+    if isinstance(deneyimler, list) and deneyimler:
+        parcalar.append("Deneyimler: " + ", ".join(str(d) for d in deneyimler))
+
+    egitim = analiz.get("egitim")
+    if egitim:
+        parcalar.append("Egitim: " + str(egitim))
+
+    return ". ".join(parcalar)
+
 
 @router.post("/cv-yukle")
 def cv_yukle(
@@ -45,11 +67,16 @@ CV METNI:
             "teknik_detay": str(e),
         }
 
+    # Analiz JSON'undan temiz metin kur, embedding uret (basarisizsa None doner)
+    embed_metni = _cv_analizden_metin(cv_analizi)
+    embedding = gemini_embedding_uret(embed_metni) if embed_metni else None
+
     yeni_kayit = CVKaydi(
         dosya_adi=dosya.filename,
         karakter_sayisi=len(metin),
         sayfa_sayisi=len(pdf_okuyucu.pages),
         analiz=cv_analizi,
+        embedding=embedding,
     )
     db.add(yeni_kayit)
     db.commit()
@@ -61,7 +88,10 @@ CV METNI:
         "sayfa_sayisi": len(pdf_okuyucu.pages),
         "karakter_sayisi": len(metin),
         "analiz": cv_analizi,
+        "embedding_uretildi": embedding is not None,
     }
+
+
 @router.get("/cv-gecmis")
 def cv_gecmis(
     limit: int = 10,
@@ -87,4 +117,4 @@ def cv_gecmis(
             }
             for k in kayitlar
         ],
-    }    
+    }
