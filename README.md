@@ -139,6 +139,4 @@ API `http://127.0.0.1:8000` adresinde çalışır. İnteraktif dokümantasyon: `
 - **CORS whitelist:** Wildcard (`*`) yerine yalnızca frontend origin'lerine izin verilir.
 - **Idempotent tablo oluşturma:** `Base.metadata.create_all` ile tablolar varsa dokunulmaz.
 
----
 
-*Bu proje, junior backend developer yolunda geliştirilen bir öğrenme ve portfolyo projesidir.*
