@@ -1,0 +1,14 @@
+# Kabuk betikleri Linux container'da çalışır: CRLF olursa "bad interpreter"
+# hatası verir. Bu dosyalar her zaman LF ile check out edilsin.
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+Dockerfile text eol=lf
+
+# Python ve yapılandırma dosyaları da tutarlı olsun.
+*.py text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# İkili dosyalar dokunulmaz.
+*.pdf binary

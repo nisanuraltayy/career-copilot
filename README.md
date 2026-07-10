@@ -1,142 +1,230 @@
-# Career Copilot
+<div align="center">
 
-İş arayanlar için yapay zeka destekli bir kariyer asistanı. Yüklenen CV'yi analiz edip becerilere ayırır, iş ilanlarıyla uyumunu yüzdelik olarak hesaplar, en uygun ilanları önerir ve seçilen ilana özel motivasyon mektubu yazar.
+# 🎯 Career Copilot
 
-Bu depo projenin **backend** (API) tarafını içerir. Frontend ayrı bir depoda: [career-copilot-frontend](https://github.com/nisanuraltayy/career-copilot-frontend).
+**Yapay zekâ destekli kariyer asistanı — backend API**
 
-## Ne İşe Yarar?
+CV'yi analiz eder, iş ilanlarıyla uyumunu ölçer, en uygun ilanları önerir ve kişiye özel motivasyon mektubu üretir.
 
-Career Copilot dört temel işi yapar:
+[![CI](https://github.com/nisanuraltayy/career-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/nisanuraltayy/career-copilot/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688)
+![Postgres](https://img.shields.io/badge/PostgreSQL-pgvector-336791)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-1. **CV Analizi** — Yüklenen PDF CV'yi Gemini ile analiz eder; becerileri, deneyimleri ve eğitimi yapılandırılmış bir formata ayırır.
-2. **Uyum Analizi** — Bir CV ile bir iş ilanı arasındaki uyumu hesaplar. Hibrit yaklaşım kullanır: V1 kelime eşleştirme (deterministik) + V2 LLM tabanlı anlamsal analiz.
-3. **İş Önerileri** — Bir CV'ye en uygun iş ilanlarını, anlamsal benzerliğe göre sıralayarak önerir. pgvector ile vektör benzerliği (cosine distance) üzerinden çalışır.
-4. **Motivasyon Mektubu** — Seçilen CV ve ilana özel, kişiselleştirilmiş bir motivasyon mektubu üretir.
+</div>
+
+---
+
+## İçindekiler
+
+- [Genel Bakış](#genel-bakış)
+- [Özellikler](#özellikler)
+- [Teknoloji Yığını](#teknoloji-yığını)
+- [Mimari](#mimari)
+- [Hızlı Başlangıç (Docker)](#hızlı-başlangıç-docker)
+- [Manuel Kurulum](#manuel-kurulum)
+- [Veritabanı Migration'ları](#veritabanı-migrationları)
+- [Testler](#testler)
+- [API Referansı](#api-referansı)
+- [Yapılandırma](#yapılandırma)
+- [Öne Çıkan Teknik Kararlar](#öne-çıkan-teknik-kararlar)
+
+---
+
+## Genel Bakış
+
+Career Copilot, iş arayan bir kullanıcının CV'sini yükleyip yapay zekâ ile analiz eden, ardından bu analizi iş ilanlarıyla eşleştirerek somut kariyer içgörüleri üreten bir REST API'dir. Bu depo projenin **backend** tarafını içerir; frontend ayrı bir depodadır: [career-copilot-frontend](https://github.com/nisanuraltayy/career-copilot-frontend).
+
+## Özellikler
+
+| Özellik | Açıklama |
+|--------|----------|
+| 📄 **CV Analizi** | PDF CV'yi Gemini ile analiz eder; beceri, deneyim ve eğitimi yapılandırılmış JSON'a ayırır. |
+| 🎯 **Uyum Analizi** | CV ↔ ilan uyumunu hibrit hesaplar: **V1** deterministik kelime eşleştirme + **V2** LLM semantik analiz. |
+| 🔎 **İş Önerileri** | CV'ye en yakın ilanları **pgvector** cosine distance ile veritabanı katmanında sıralar. |
+| ✍️ **Motivasyon Mektubu** | Seçilen CV ve ilana özel, kişiselleştirilmiş mektup üretir. |
 
 ## Teknoloji Yığını
 
-- **FastAPI** — Web framework (Python)
-- **PostgreSQL + pgvector** — Veritabanı ve vektör benzerlik araması
-- **Google Gemini** — LLM (analiz, mektup üretimi) ve embedding (gemini-embedding-001, 3072 boyut)
-- **SQLAlchemy** — ORM
-- **Docker** — pgvector'lü PostgreSQL'i lokal çalıştırmak için
+- **FastAPI** — asenkron web framework
+- **PostgreSQL + pgvector** — ilişkisel veri + vektör benzerlik araması
+- **SQLAlchemy 2.0** — tip güvenli ORM
+- **Alembic** — versiyonlanmış veritabanı migration'ları
+- **Google Gemini** — LLM analiz/üretim + `gemini-embedding-001` (3072 boyut) embedding
+- **Pydantic v2 / pydantic-settings** — şema doğrulama ve yapılandırma
+- **pytest + ruff** — test ve statik analiz
+- **Docker / docker-compose** — container'lı çalıştırma
 
 ## Mimari
 
-Proje modüler bir yapıda organize edilmiştir. Sorumluluklar ayrılmıştır (separation of concerns):
+Proje **katmanlı (layered) mimari** ile tasarlanmıştır. Her katmanın tek bir sorumluluğu vardır ve bağımlılıklar tek yönlüdür: `router → service → db`. HTTP detayları iş mantığına, iş mantığı da HTTP'ye sızmaz.
 
 ```
-career-copilot/
-├── main.py                  # FastAPI uygulaması, router kayıtları, CORS
-├── database.py              # SQLAlchemy modelleri, DB bağlantısı
-├── routers/
-│   ├── cv.py                # CV yükleme ve analiz endpoint'leri
-│   ├── ilan.py              # İş ilanı ekleme ve analiz endpoint'leri
-│   ├── uyum.py              # Uyum analizi endpoint'leri
-│   ├── mektup.py            # Motivasyon mektubu endpoint'leri
-│   └── oneri.py             # İş önerisi endpoint'i (pgvector)
-└── services/
-    └── gemini_service.py    # Gemini API çağrıları (analiz, mektup, embedding)
+app/
+├── main.py                 # Uygulama fabrikası (create_app), middleware, router kaydı
+├── core/
+│   ├── config.py           # Pydantic Settings — tek yapılandırma kaynağı (fail-fast)
+│   ├── logging.py          # Yapılandırılmış logging (dev: metin, prod: JSON)
+│   └── exceptions.py       # Hata hiyerarşisi + merkezi exception handler'lar
+├── db/
+│   ├── base.py             # Declarative Base, TimestampMixin (tz-aware)
+│   ├── session.py          # Engine, SessionLocal, get_db (pool + pre_ping)
+│   └── models.py           # ORM modelleri (ForeignKey, ilişkiler, index'ler)
+├── schemas/                # Pydantic request/response modelleri (I/O kontratı)
+├── services/               # ── İş mantığı katmanı ──
+│   ├── gemini.py           #   Gemini istemci sarmalayıcısı (sağlayıcıdan bağımsız)
+│   ├── pdf.py              #   PDF metin çıkarma
+│   ├── prompts.py          #   LLM prompt şablonları
+│   ├── cv_service.py       #   CV: PDF → analiz → embedding → kayıt
+│   ├── ilan_service.py     #   İlan iş mantığı
+│   ├── uyum_service.py     #   V1 (pure) + V2 (LLM) uyum hesabı
+│   ├── mektup_service.py   #   Mektup üretimi
+│   └── oneri_service.py    #   pgvector vektör araması
+└── routers/                # İnce HTTP katmanı (validasyon + service çağrısı)
+
+alembic/                    # Migration'lar (create_all yerine)
+tests/                      # pytest suite (birim + API, DB/API'ye vurmadan)
 ```
 
-### Veritabanı Modelleri
+### Katmanların sorumluluğu
 
-Dört tablo:
+- **Router** — sadece HTTP: girdi doğrulama, servis çağırma, `response_model` ile yanıt. İş kararı vermez.
+- **Service** — tüm iş mantığı ve DB erişimi. HTTP'den habersizdir; anlamlı domain hataları (`ResourceNotFound`, `UpstreamServiceError` …) fırlatır.
+- **Schema** — API'nin dış kontratı; iç modelden ayrıdır, böylece DB şeması değişse de API stabil kalır.
 
-- `cv_kayitlari` — CV analizleri (+ embedding vektörü)
-- `is_ilanlari` — İş ilanı analizleri (+ embedding vektörü)
-- `uyum_analizleri` — V1 ve V2 uyum sonuçları
-- `motivasyon_mektuplari` — Üretilen mektuplar
+### İş İlanı / CV ekleme akışı
 
-CV ve ilan tablolarında `Vector(3072)` tipinde bir `embedding` kolonu vardır. Bu kolon nullable'dır: embedding üretimi başarısız olsa bile (örneğin Gemini API geçici olarak yanıt vermezse) kayıt yine de saklanabilir (graceful degradation).
+```
+İstek → Router (doğrula) → Service → [Gemini analiz] → [analiz JSON'undan embedding metni]
+      → [Gemini embedding] → DB kaydı → response_model → JSON yanıt
+```
 
-### Embedding ve Öneri Akışı
+Embedding **ham metinden değil, analiz JSON'undan** üretilir. İki sebep: (1) `gemini-embedding-001`'in girdi limiti ~2048 token, uzun CV'ler bunu aşar; (2) analiz JSON'u gürültüsüzdür ve CV ile ilan **aynı formatta** karşılaştırılır.
 
-Bir CV veya ilan eklendiğinde:
+Embedding üretimi başarısız olursa kayıt yine de saklanır (`embedding` kolonu nullable) — **graceful degradation**.
 
-1. Gemini metni analiz eder (JSON).
-2. Analiz JSON'undan temiz bir metin oluşturulur.
-3. Bu metin `gemini-embedding-001` ile 3072 boyutlu vektöre çevrilir.
-4. Vektör, kaydın `embedding` kolonuna yazılır.
+## Hızlı Başlangıç (Docker)
 
-Embedding neden ham metinden değil, analiz JSON'undan üretilir? İki sebep: (1) `gemini-embedding-001`'in girdi limiti 2048 token — uzun CV'ler bunu aşabilir; (2) analiz JSON'u gürültüsüz ve öz, CV ile ilan aynı formatta karşılaştırılır.
+En hızlı yol: uygulama + pgvector'lü PostgreSQL tek komutla ayağa kalkar, migration'lar otomatik uygulanır.
 
-Öneri hesaplaması pgvector'ün cosine distance operatörü (`<=>`) ile **veritabanı katmanında** yapılır. Tüm vektörler Python'a çekilip döngüyle karşılaştırılmaz; bu yaklaşım ölçeklenebilir.
+```bash
+git clone https://github.com/nisanuraltayy/career-copilot.git
+cd career-copilot
+cp .env.example .env          # GEMINI_API_KEY'i doldurun
+docker compose up --build
+```
 
-## Kurulum (Lokal)
+- API: <http://localhost:8000>
+- Swagger: <http://localhost:8000/docs>
 
-### Gereksinimler
+## Manuel Kurulum
 
-- Python 3.11+
-- Docker
-- Google Gemini API anahtarı
+<details>
+<summary>Docker olmadan lokal geliştirme</summary>
 
-### Adımlar
+**Gereksinimler:** Python 3.11+, çalışan bir PostgreSQL (pgvector eklentili), Gemini API anahtarı.
 
-1. Depoyu klonlayın:
-   ```bash
-   git clone https://github.com/nisanuraltayy/career-copilot.git
-   cd career-copilot
-   ```
+```bash
+# 1) Sanal ortam + bağımlılıklar
+python -m venv venv
+venv\Scripts\activate            # Windows
+# source venv/bin/activate       # macOS/Linux
+pip install -r requirements-dev.txt
 
-2. Sanal ortam oluşturun ve bağımlılıkları kurun:
-   ```bash
-   python -m venv venv
-   venv\Scripts\activate        # Windows
-   # source venv/bin/activate   # macOS/Linux
-   pip install -r requirements.txt
-   ```
+# 2) .env oluştur
+cp .env.example .env             # değerleri doldur
 
-3. `.env` dosyası oluşturun:
-   ```
-   DATABASE_URL=postgresql://raguser:ragpass123@localhost:5432/careerdb
-   GEMINI_API_KEY=buraya_kendi_anahtariniz
-   ```
+# 3) pgvector'lü Postgres (Docker ile tek container)
+docker run -d --name rag-postgres \
+  -e POSTGRES_USER=raguser -e POSTGRES_PASSWORD=ragpass123 -e POSTGRES_DB=careerdb \
+  -p 5432:5432 pgvector/pgvector:pg16
 
-4. pgvector'lü PostgreSQL'i Docker ile başlatın:
-   ```bash
-   docker run -d --name rag-postgres \
-     -e POSTGRES_USER=raguser \
-     -e POSTGRES_PASSWORD=ragpass123 \
-     -e POSTGRES_DB=careerdb \
-     -p 5432:5432 \
-     pgvector/pgvector:pg16
-   ```
+# 4) Şemayı oluştur (migration)
+alembic upgrade head
 
-5. Veritabanında pgvector extension'ını etkinleştirin:
-   ```bash
-   docker exec -it rag-postgres psql -U raguser -d careerdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
-   ```
+# 5) Çalıştır
+uvicorn app.main:app --reload
+```
 
-6. Uygulamayı başlatın (tablolar otomatik oluşur):
-   ```bash
-   uvicorn main:app --reload
-   ```
+</details>
 
-API `http://127.0.0.1:8000` adresinde çalışır. İnteraktif dokümantasyon: `http://127.0.0.1:8000/docs`.
+## Veritabanı Migration'ları
 
-## Endpoint'ler
+Şema `create_all` ile değil **Alembic** ile yönetilir; her değişiklik versiyonlanır ve geri alınabilir.
+
+```bash
+alembic upgrade head                        # en son şemaya getir
+alembic downgrade -1                         # bir adım geri al
+alembic revision --autogenerate -m "mesaj"   # model değişiminden yeni migration üret
+```
+
+> **Not (vektör index'i):** `gemini-embedding-001` 3072 boyut üretir. pgvector'ün ANN index'leri (ivfflat/hnsw) **en fazla 2000 boyut** destekler; bu yüzden 3072'de arama *exact scan* yapar (küçük/orta veri için yeterli). Ölçek gerekince `EMBEDDING_DIM` 1536'ya düşürülüp bir HNSW index migration'ı eklenebilir — kod bu değişime tek noktadan hazırdır (`app/core/config.py`).
+
+## Testler
+
+Testler **gerçek veritabanına veya Gemini API'sine vurmaz** — DB sahte session ile, servisler monkeypatch ile izole edilir. Bu sayede CI'da hızlı ve deterministiktir.
+
+```bash
+pytest                 # tüm suite
+pytest --cov           # coverage raporu ile
+ruff check app tests   # statik analiz
+```
+
+Kapsam: V1 uyum skoru (parametrik), embedding metin kurucular, Gemini JSON temizleme/hata soyutlama, PDF çıkarma, ve tüm endpoint'lerin başarı + hata (404/400/422/502/503) yolları.
+
+## API Referansı
 
 | Metod | Yol | Açıklama |
 |-------|-----|----------|
-| GET | `/` | Ana sayfa (sağlık mesajı) |
-| GET | `/saglik` | Sağlık kontrolü |
+| GET | `/` | Kök — servis durumu |
+| GET | `/saglik` | Liveness (süreç ayakta mı?) |
+| GET | `/hazir` | Readiness (DB dahil bağımlılıklar hazır mı?) |
 | POST | `/cv-yukle` | PDF CV yükle ve analiz et |
 | GET | `/cv-gecmis` | Yüklenen CV'leri listele |
 | POST | `/is-ilani-analiz` | İş ilanı ekle ve analiz et |
 | GET | `/is-ilanlari` | Eklenen ilanları listele |
-| POST | `/uyum-analizi` | CV-ilan uyumunu hesapla (V1 + V2) |
+| POST | `/uyum-analizi` | CV–ilan uyumunu hesapla (V1 + V2) |
 | GET | `/uyum-analizi-gecmis` | Geçmiş uyum analizleri |
 | POST | `/motivasyon-mektubu` | Motivasyon mektubu üret |
 | GET | `/motivasyon-mektubu-gecmis` | Geçmiş mektuplar |
 | GET | `/is-onerileri/{cv_id}` | Bir CV'ye en uygun ilanları öner (pgvector) |
 
+**Tutarlı hata formatı** — tüm hatalar aynı gövdeyle döner, teknik detay client'a sızmaz:
+
+```json
+{ "error": { "code": "not_found", "message": "CV bulunamadı (id=99)." } }
+```
+
+## Yapılandırma
+
+Tüm ayarlar `app/core/config.py`'de tek yerde, tip güvenli tanımlanır ve `.env`'den okunur. Öne çıkanlar:
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `DATABASE_URL` | — (zorunlu) | PostgreSQL bağlantı adresi |
+| `GEMINI_API_KEY` | — (zorunlu) | Google Gemini API anahtarı |
+| `ENVIRONMENT` | `development` | `production`'da `/docs` kapanır |
+| `LOG_JSON` | `false` | Log agregasyonu için JSON log |
+| `CORS_ORIGINS` | localhost:5173 | Virgülle ayrılmış izinli origin'ler |
+| `EMBEDDING_DIM` | `3072` | Embedding boyutu (bkz. vektör index notu) |
+| `MAX_UPLOAD_BYTES` | `10485760` | Yükleme boyut limiti (10 MB) |
+
 ## Öne Çıkan Teknik Kararlar
 
-- **Hibrit uyum analizi:** V1 (deterministik kelime eşleştirme) her zaman çalışır; V2 (LLM anlamsal analiz) patlarsa V1 yine sonuç döner (graceful degradation).
-- **pgvector vektör araması:** Benzerlik hesabı uygulama katmanında değil, veritabanında yapılır.
-- **Modüler router yapısı:** Her özellik kendi router dosyasında, `main.py` sade tutulur.
-- **CORS whitelist:** Wildcard (`*`) yerine yalnızca frontend origin'lerine izin verilir.
-- **Idempotent tablo oluşturma:** `Base.metadata.create_all` ile tablolar varsa dokunulmaz.
+- **Katmanlı mimari** — router/service/schema/db ayrımı; iş mantığı HTTP'den bağımsız, birim test edilebilir (saf fonksiyonlar).
+- **Merkezî hata yönetimi** — servisler domain hatası fırlatır, tek handler HTTP'ye çevirir. Tutarlı `{error: {code, message}}` gövdesi; stack trace asla sızmaz.
+- **Geçici hatalara dayanıklılık (retry + backoff)** — Google yoğun trafikte `503 UNAVAILABLE` / `429` döndürebilir. AI istemcisi bu **geçici** hataları üstel geri çekilme + jitter ile 5 kez yeniden dener; tükenirse **HTTP 503** ve dostça bir mesaj döner. Kalıcı hatalar (4xx, geçersiz yanıt) ise beklemeden **502** olur. Kod haritası: `app/services/gemini.py` (`_retry_ile_cagir`, `_gecici_mi`).
+- **Alembic migration'ları** — versiyonlu, geri alınabilir şema; production'da `create_all` yok.
+- **Referans bütünlüğü** — `ForeignKey` + `ON DELETE CASCADE` ve indexli FK kolonları.
+- **Hibrit uyum analizi** — V1 (deterministik) her zaman çalışır; V2 (LLM) patlarsa V1'e düşer (graceful degradation).
+- **DB-katmanında vektör araması** — benzerlik hesabı Python'a çekilmeden pgvector `<=>` ile yapılır; ölçeklenebilir.
+- **12-factor config** — ayarlar env'den, fail-fast doğrulama ile; sağlayıcı sarmalayıcısı (Gemini) sayesinde LLM sağlayıcısı tek dosyadan değişir.
+- **Gözlemlenebilirlik** — yapılandırılmış logging, `/saglik` (liveness) ve `/hazir` (readiness) probe'ları, Docker `HEALTHCHECK`.
+- **Güvenli container** — çok aşamalı (multi-stage) build, root olmayan kullanıcı, ince runtime imajı.
 
+---
 
+<div align="center">
+<sub>MIT lisansı · Senior backend pratiklerini sergilemek için geliştirilmiş portfolyo projesi</sub>
+</div>

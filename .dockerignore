@@ -1,0 +1,30 @@
+# VCS
+.git
+.gitignore
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Ortam / sırlar
+.env
+.env.*
+!.env.example
+
+# Geliştirme
+.vscode/
+.idea/
+tests/
+*.md
+!README.md
+
+# CI
+.github/

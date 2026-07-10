@@ -1,6 +1,27 @@
-venv/ 
-__pycache__/ 
-.env 
-*.pyc 
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Ortam / sırlar
+.env
+.env.*
+!.env.example
+
+# Test / araç önbellekleri
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE / OS
 .vscode/
-test_cv.pdf 
+.idea/
+.DS_Store
+
+# Geçici
+test_cv.pdf
+*.tmp

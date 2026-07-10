@@ -1,0 +1,41 @@
+[project]
+name = "career-copilot"
+version = "1.0.0"
+description = "AI destekli kariyer asistanı backend'i (FastAPI + pgvector + Gemini)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --strict-markers"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/main.py", "*/__init__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "C4"]
+ignore = ["E501"]  # satır uzunluğu formatter'a bırakılır
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI'nin Depends/Query/Path/File/Body çağrıları argüman varsayılanında
+# kullanılır — bu framework idiyomu, B008 uyarısından muaf tutulur.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.File",
+    "fastapi.Body",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/*" = ["E402"]
+"tests/*" = ["B011", "C408"]
