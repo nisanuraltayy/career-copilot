@@ -8,9 +8,22 @@ log aggregation araçları (Loki, CloudWatch, Datadog) alanları ayrıştırabil
 import json
 import logging
 import sys
+from contextvars import ContextVar
 from datetime import UTC, datetime
 
 from app.core.config import settings
+
+# Request başına atanan korelasyon kimliği. Middleware set eder; loglar okur.
+# ContextVar olduğu için thread/async bağlamları arasında sızmaz.
+request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
+
+
+class RequestIdFilter(logging.Filter):
+    """Her log kaydına aktif request_id'yi ekler."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_var.get()
+        return True
 
 
 class JsonFormatter(logging.Formatter):
@@ -21,6 +34,7 @@ class JsonFormatter(logging.Formatter):
             "ts": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
+            "request_id": getattr(record, "request_id", "-"),
             "message": record.getMessage(),
         }
         if record.exc_info:
@@ -47,12 +61,13 @@ def setup_logging() -> None:
         root.removeHandler(handler)
 
     handler = logging.StreamHandler(sys.stdout)
+    handler.addFilter(RequestIdFilter())
     if settings.log_json:
         handler.setFormatter(JsonFormatter())
     else:
         handler.setFormatter(
             logging.Formatter(
-                "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+                "%(asctime)s | %(levelname)-8s | %(name)s | [%(request_id)s] | %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
             )
         )

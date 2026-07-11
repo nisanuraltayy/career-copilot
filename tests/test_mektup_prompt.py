@@ -28,8 +28,8 @@ def test_kirp_metin_uzunsa_kirpar():
 
 
 def _yakala_prompt(monkeypatch, cv, ilan) -> str:
-    monkeypatch.setattr(mektup_service, "cv_getir", lambda db, cid: cv)
-    monkeypatch.setattr(mektup_service, "ilan_getir", lambda db, iid: ilan)
+    monkeypatch.setattr(mektup_service, "cv_getir", lambda db, cid, uid: cv)
+    monkeypatch.setattr(mektup_service, "ilan_getir", lambda db, iid, uid: ilan)
     yakalanan = {}
 
     def sahte_metin_uret(prompt):
@@ -37,7 +37,7 @@ def _yakala_prompt(monkeypatch, cv, ilan) -> str:
         return "Sayin Yetkili, ..."
 
     monkeypatch.setattr(mektup_service.gemini, "metin_uret", sahte_metin_uret)
-    mektup_service.mektup_uret(MagicMock(), 1, 2)
+    mektup_service.mektup_uret(MagicMock(), user_id=1, cv_id=1, is_ilani_id=2)
     return yakalanan["prompt"]
 
 

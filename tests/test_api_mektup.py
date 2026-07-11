@@ -7,7 +7,7 @@ from app.services import mektup_service
 
 
 def test_mektup_uret_basarili(client, monkeypatch):
-    def sahte(db, cv_id, is_ilani_id):
+    def sahte(db, user_id, cv_id, is_ilani_id):
         ilan = SimpleNamespace(pozisyon_adi="Backend Dev", sirket_adi="ACME")
         return SimpleNamespace(
             id=7, cv_id=cv_id, is_ilani_id=is_ilani_id,
@@ -22,7 +22,7 @@ def test_mektup_uret_basarili(client, monkeypatch):
 
 
 def test_mektup_uret_ilan_yok_404(client, monkeypatch):
-    def patla(db, cv_id, is_ilani_id):
+    def patla(db, user_id, cv_id, is_ilani_id):
         raise ResourceNotFound("İş ilanı bulunamadı.")
 
     monkeypatch.setattr(mektup_service, "mektup_uret", patla)

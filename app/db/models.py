@@ -23,10 +23,29 @@ from app.db.base import Base, TimestampMixin
 JsonType = SA_JSON().with_variant(JSONB(), "postgresql")
 
 
+class User(Base, TimestampMixin):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+
+    cvler: Mapped[list["CVKaydi"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    ilanlar: Mapped[list["IsIlani"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
 class CVKaydi(Base, TimestampMixin):
     __tablename__ = "cv_kayitlari"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     dosya_adi: Mapped[str] = mapped_column(String(255), nullable=False)
     karakter_sayisi: Mapped[int] = mapped_column(Integer, nullable=False)
     sayfa_sayisi: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -35,6 +54,7 @@ class CVKaydi(Base, TimestampMixin):
         Vector(settings.embedding_dim), nullable=True
     )
 
+    user: Mapped["User"] = relationship(back_populates="cvler")
     uyum_analizleri: Mapped[list["UyumAnalizi"]] = relationship(
         back_populates="cv", cascade="all, delete-orphan"
     )
@@ -47,6 +67,9 @@ class IsIlani(Base, TimestampMixin):
     __tablename__ = "is_ilanlari"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     pozisyon_adi: Mapped[str] = mapped_column(String(255), nullable=False)
     sirket_adi: Mapped[str | None] = mapped_column(String(255), nullable=True)
     deneyim_yili: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -56,6 +79,7 @@ class IsIlani(Base, TimestampMixin):
         Vector(settings.embedding_dim), nullable=True
     )
 
+    user: Mapped["User"] = relationship(back_populates="ilanlar")
     uyum_analizleri: Mapped[list["UyumAnalizi"]] = relationship(
         back_populates="ilan", cascade="all, delete-orphan"
     )
@@ -68,6 +92,9 @@ class UyumAnalizi(Base, TimestampMixin):
     __tablename__ = "uyum_analizleri"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     cv_id: Mapped[int] = mapped_column(
         ForeignKey("cv_kayitlari.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -85,6 +112,9 @@ class MotivasyonMektubu(Base, TimestampMixin):
     __tablename__ = "motivasyon_mektuplari"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     cv_id: Mapped[int] = mapped_column(
         ForeignKey("cv_kayitlari.id", ondelete="CASCADE"), nullable=False, index=True
     )

@@ -28,14 +28,32 @@ services:
       # Compose ağı içinde DB host adı 'db'.
       DATABASE_URL: postgresql://${POSTGRES_USER:-raguser}:${POSTGRES_PASSWORD:-ragpass123}@db:5432/${POSTGRES_DB:-careerdb}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY gerekli}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET gerekli}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_JSON: ${LOG_JSON:-false}
+      # Frontend aynı origin'den (nginx /api proxy) konuştuğu için CORS
+      # docker'da gerekmez; yine de dev için açık bırakılır.
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
     ports:
       - "9000:8000"
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Frontend (nginx ile statik servis + /api reverse proxy).
+  # Not: frontend ayrı bir repodadır; iki repo kardeş klasörlerde olmalı
+  # (career-copilot/ ve career-copilot-frontend/).
+  frontend:
+    build:
+      context: ../career-copilot-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    ports:
+      - "5173:80"
+    depends_on:
+      - app
     restart: unless-stopped
 
 volumes:

@@ -9,7 +9,7 @@ sessizce None dönmez.
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, PostgresDsn, field_validator
+from pydantic import Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -93,6 +93,18 @@ class Settings(BaseSettings):
     # ile 24000 karakter ≈ 6000 token — flash modelleri için fazlasıyla güvenli.
     max_prompt_chars: int = 24000
 
+    # --- Auth / JWT ---
+    # Production'da MUTLAKA güçlü, rastgele bir değerle override edilmeli.
+    # (Aşağıda production'da varsayılan değere izin vermeyen bir doğrulama var.)
+    jwt_secret: str = "dev-insecure-change-me-in-prod"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24  # 24 saat
+
+    # --- Rate limiting ---
+    rate_limit_enabled: bool = True
+    # AI endpoint'leri (Gemini maliyeti) için IP başına sıkı limit.
+    rate_limit_ai: str = "20/minute"
+
     # --- Dosya yükleme limitleri ---
     max_upload_bytes: int = 10 * 1024 * 1024  # 10 MB
 
@@ -107,6 +119,15 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @model_validator(mode="after")
+    def _guvenli_sirlar(self) -> "Settings":
+        """Production'da güvensiz varsayılan JWT secret'ına izin verme (fail-fast)."""
+        if self.is_production and self.jwt_secret == "dev-insecure-change-me-in-prod":
+            raise ValueError(
+                "Production ortamında JWT_SECRET güçlü bir değerle ayarlanmalı."
+            )
+        return self
 
 
 @lru_cache

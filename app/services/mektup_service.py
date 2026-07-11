@@ -40,11 +40,13 @@ def _kirp_metin(metin: object, azami: int) -> str:
     return s if len(s) <= azami else s[:azami].rstrip() + "…"
 
 
-def mektup_uret(db: Session, cv_id: int, is_ilani_id: int) -> MotivasyonMektubu:
-    cv = cv_getir(db, cv_id)
+def mektup_uret(
+    db: Session, user_id: int, cv_id: int, is_ilani_id: int
+) -> MotivasyonMektubu:
+    cv = cv_getir(db, cv_id, user_id)
     if cv is None:
         raise ResourceNotFound(f"CV bulunamadı (id={cv_id}).")
-    ilan = ilan_getir(db, is_ilani_id)
+    ilan = ilan_getir(db, is_ilani_id, user_id)
     if ilan is None:
         raise ResourceNotFound(f"İş ilanı bulunamadı (id={is_ilani_id}).")
 
@@ -91,6 +93,7 @@ def mektup_uret(db: Session, cv_id: int, is_ilani_id: int) -> MotivasyonMektubu:
     mektup_metni = gemini.metin_uret(prompt)
 
     mektup = MotivasyonMektubu(
+        user_id=user_id,
         cv_id=cv.id,
         is_ilani_id=ilan.id,
         mektup_metni=mektup_metni,
@@ -103,14 +106,16 @@ def mektup_uret(db: Session, cv_id: int, is_ilani_id: int) -> MotivasyonMektubu:
 
 def mektup_gecmis(
     db: Session,
+    user_id: int,
     limit: int = 10,
+    offset: int = 0,
     cv_id: int | None = None,
     is_ilani_id: int | None = None,
 ) -> list[MotivasyonMektubu]:
-    stmt = select(MotivasyonMektubu)
+    stmt = select(MotivasyonMektubu).where(MotivasyonMektubu.user_id == user_id)
     if cv_id is not None:
         stmt = stmt.where(MotivasyonMektubu.cv_id == cv_id)
     if is_ilani_id is not None:
         stmt = stmt.where(MotivasyonMektubu.is_ilani_id == is_ilani_id)
-    stmt = stmt.order_by(MotivasyonMektubu.created_at.desc()).limit(limit)
+    stmt = stmt.order_by(MotivasyonMektubu.created_at.desc()).offset(offset).limit(limit)
     return list(db.scalars(stmt).all())

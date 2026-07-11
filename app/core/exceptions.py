@@ -67,6 +67,22 @@ class ServiceUnavailableError(AppError):
     message = "The AI service is temporarily busy. Please try again in a few seconds."
 
 
+class AuthError(AppError):
+    """Kimlik doğrulama başarısız (token yok/geçersiz, parola yanlış)."""
+
+    status_code = status.HTTP_401_UNAUTHORIZED
+    error_code = "unauthorized"
+    message = "Kimlik doğrulaması gerekli."
+
+
+class ConflictError(AppError):
+    """Kaynak çakışması (örn. e-posta zaten kayıtlı)."""
+
+    status_code = status.HTTP_409_CONFLICT
+    error_code = "conflict"
+    message = "Kaynak zaten mevcut."
+
+
 class BusinessRuleError(AppError):
     """İş kuralı ihlali (örn. embedding'i olmayan CV için öneri istenmesi)."""
 

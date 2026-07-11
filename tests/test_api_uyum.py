@@ -7,7 +7,7 @@ from app.services import uyum_service
 
 
 def test_uyum_analizi_basarili(client, monkeypatch):
-    def sahte(db, cv_id, is_ilani_id):
+    def sahte(db, user_id, cv_id, is_ilani_id):
         return SimpleNamespace(
             id=10, cv_id=cv_id, is_ilani_id=is_ilani_id,
             v1_sonuc={"uyum_yuzdesi": 70}, v2_sonuc={"uyum_yuzdesi": 80},
@@ -20,7 +20,7 @@ def test_uyum_analizi_basarili(client, monkeypatch):
 
 
 def test_uyum_analizi_cv_yok_404(client, monkeypatch):
-    def patla(db, cv_id, is_ilani_id):
+    def patla(db, user_id, cv_id, is_ilani_id):
         raise ResourceNotFound("CV bulunamadı (id=99).")
 
     monkeypatch.setattr(uyum_service, "uyum_analizi_yap", patla)

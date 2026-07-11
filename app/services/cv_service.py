@@ -35,8 +35,10 @@ def cv_analizden_embedding_metni(analiz: dict) -> str:
     return ". ".join(parcalar)
 
 
-def cv_olustur(db: Session, dosya_adi: str, pdf_bytes: bytes) -> CVKaydi:
-    """PDF'i işleyip analiz eder, embedding üretir ve kaydeder.
+def cv_olustur(
+    db: Session, user_id: int, dosya_adi: str, pdf_bytes: bytes
+) -> CVKaydi:
+    """PDF'i işleyip analiz eder, embedding üretir ve kaydeder (kullanıcıya ait).
 
     PDF geçersizse `ValidationFailed`, Gemini analizi çökerse
     `UpstreamServiceError` fırlatır (merkezi handler'lar HTTP'ye çevirir).
@@ -49,6 +51,7 @@ def cv_olustur(db: Session, dosya_adi: str, pdf_bytes: bytes) -> CVKaydi:
     embedding = gemini.embedding_uret(embed_metni) if embed_metni else None
 
     kayit = CVKaydi(
+        user_id=user_id,
         dosya_adi=dosya_adi,
         karakter_sayisi=len(cikarim.metin),
         sayfa_sayisi=cikarim.sayfa_sayisi,
@@ -65,10 +68,21 @@ def cv_olustur(db: Session, dosya_adi: str, pdf_bytes: bytes) -> CVKaydi:
     return kayit
 
 
-def cv_listele(db: Session, limit: int = 10) -> list[CVKaydi]:
-    stmt = select(CVKaydi).order_by(CVKaydi.created_at.desc()).limit(limit)
+def cv_listele(
+    db: Session, user_id: int, limit: int = 10, offset: int = 0
+) -> list[CVKaydi]:
+    stmt = (
+        select(CVKaydi)
+        .where(CVKaydi.user_id == user_id)
+        .order_by(CVKaydi.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     return list(db.scalars(stmt).all())
 
 
-def cv_getir(db: Session, cv_id: int) -> CVKaydi | None:
-    return db.get(CVKaydi, cv_id)
+def cv_getir(db: Session, cv_id: int, user_id: int) -> CVKaydi | None:
+    """Sadece kullanıcıya ait CV'yi döndürür (yetkisiz erişimi engeller)."""
+    return db.scalar(
+        select(CVKaydi).where(CVKaydi.id == cv_id, CVKaydi.user_id == user_id)
+    )

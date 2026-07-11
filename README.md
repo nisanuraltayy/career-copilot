@@ -106,17 +106,21 @@ Embedding üretimi başarısız olursa kayıt yine de saklanır (`embedding` kol
 
 ## Hızlı Başlangıç (Docker)
 
-En hızlı yol: uygulama + pgvector'lü PostgreSQL tek komutla ayağa kalkar, migration'lar otomatik uygulanır.
+Tek komutla **tam yığın** ayağa kalkar: frontend (nginx) + backend + pgvector'lü PostgreSQL. Migration'lar otomatik uygulanır; frontend `/api`'yi backend'e proxy'ler (CORS gerekmez).
+
+> Frontend ayrı repodadır; iki repo **kardeş klasörlerde** olmalı (`career-copilot/` ve `career-copilot-frontend/`).
 
 ```bash
 git clone https://github.com/nisanuraltayy/career-copilot.git
 cd career-copilot
-cp .env.example .env          # GEMINI_API_KEY'i doldurun
+cp .env.example .env          # GEMINI_API_KEY ve JWT_SECRET doldurun
 docker compose up --build
 ```
 
-- API: <http://localhost:8000>
-- Swagger: <http://localhost:8000/docs>
+- Uygulama (frontend): <http://localhost:5173>
+- Backend API: <http://localhost:9000>  · Swagger: <http://localhost:9000/docs>
+
+> **Güçlü JWT_SECRET üret:** `python -c "import secrets; print(secrets.token_urlsafe(48))"`
 
 ## Manuel Kurulum
 
@@ -175,20 +179,27 @@ Kapsam: V1 uyum skoru (parametrik), embedding metin kurucular, Gemini JSON temiz
 
 ## API Referansı
 
+🔒 = `Authorization: Bearer <token>` gerektirir. Kaynaklar **kullanıcıya özeldir** (multi-tenant): her kullanıcı yalnızca kendi CV/ilan/analiz/mektuplarını görür.
+
 | Metod | Yol | Açıklama |
 |-------|-----|----------|
 | GET | `/` | Kök — servis durumu |
 | GET | `/saglik` | Liveness (süreç ayakta mı?) |
 | GET | `/hazir` | Readiness (DB dahil bağımlılıklar hazır mı?) |
-| POST | `/cv-yukle` | PDF CV yükle ve analiz et |
-| GET | `/cv-gecmis` | Yüklenen CV'leri listele |
-| POST | `/is-ilani-analiz` | İş ilanı ekle ve analiz et |
-| GET | `/is-ilanlari` | Eklenen ilanları listele |
-| POST | `/uyum-analizi` | CV–ilan uyumunu hesapla (V1 + V2) |
-| GET | `/uyum-analizi-gecmis` | Geçmiş uyum analizleri |
-| POST | `/motivasyon-mektubu` | Motivasyon mektubu üret |
-| GET | `/motivasyon-mektubu-gecmis` | Geçmiş mektuplar |
-| GET | `/is-onerileri/{cv_id}` | Bir CV'ye en uygun ilanları öner (pgvector) |
+| POST | `/auth/register` | Kayıt ol → JWT token |
+| POST | `/auth/login` | Giriş yap → JWT token |
+| GET | `/auth/me` 🔒 | Mevcut kullanıcı |
+| POST | `/cv-yukle` 🔒 | PDF CV yükle ve analiz et |
+| GET | `/cv-gecmis` 🔒 | Yüklenen CV'leri listele (limit/offset) |
+| POST | `/is-ilani-analiz` 🔒 | İş ilanı ekle ve analiz et |
+| GET | `/is-ilanlari` 🔒 | Eklenen ilanları listele (limit/offset) |
+| POST | `/uyum-analizi` 🔒 | CV–ilan uyumunu hesapla (V1 + V2) |
+| GET | `/uyum-analizi-gecmis` 🔒 | Geçmiş uyum analizleri |
+| POST | `/motivasyon-mektubu` 🔒 | Motivasyon mektubu üret |
+| GET | `/motivasyon-mektubu-gecmis` 🔒 | Geçmiş mektuplar |
+| GET | `/is-onerileri/{cv_id}` 🔒 | Bir CV'ye en uygun ilanları öner (pgvector) |
+
+> AI endpoint'leri IP başına **rate limit**'lidir (varsayılan 20/dakika). Her yanıtta korelasyon için `X-Request-ID` başlığı döner.
 
 **Tutarlı hata formatı** — tüm hatalar aynı gövdeyle döner, teknik detay client'a sızmaz:
 
@@ -205,6 +216,8 @@ Tüm ayarlar `app/core/config.py`'de tek yerde, tip güvenli tanımlanır ve `.e
 | `DATABASE_URL` | — (zorunlu) | PostgreSQL bağlantı adresi |
 | `GEMINI_API_KEY` | — (zorunlu) | Google Gemini API anahtarı |
 | `ENVIRONMENT` | `development` | `production`'da `/docs` kapanır |
+| `JWT_SECRET` | dev default | Token imzalama anahtarı — **production'da zorunlu** (fail-fast) |
+| `RATE_LIMIT_AI` | `20/minute` | AI endpoint'leri için IP başına limit |
 | `LOG_JSON` | `false` | Log agregasyonu için JSON log |
 | `CORS_ORIGINS` | localhost:5173 | Virgülle ayrılmış izinli origin'ler |
 | `EMBEDDING_DIM` | `3072` | Embedding boyutu (bkz. vektör index notu) |
@@ -213,6 +226,8 @@ Tüm ayarlar `app/core/config.py`'de tek yerde, tip güvenli tanımlanır ve `.e
 ## Öne Çıkan Teknik Kararlar
 
 - **Katmanlı mimari** — router/service/schema/db ayrımı; iş mantığı HTTP'den bağımsız, birim test edilebilir (saf fonksiyonlar).
+- **JWT auth + multi-tenancy** — bcrypt parola hash'i, HS256 token; her kaynak `user_id`'ye bağlı ve sorgular kullanıcıya göre kapsanır (bir kullanıcı diğerinin verisini göremez). `app/core/security.py`, `app/core/deps.py`.
+- **Rate limiting + gözlemlenebilirlik** — AI endpoint'lerinde IP başına limit (slowapi); her istek için `X-Request-ID` korelasyon kimliği loglara ve yanıta işlenir; güvenlik başlıkları.
 - **Merkezî hata yönetimi** — servisler domain hatası fırlatır, tek handler HTTP'ye çevirir. Tutarlı `{error: {code, message}}` gövdesi; stack trace asla sızmaz.
 - **Geçici hatalara dayanıklılık (retry + model fallback)** — Google yoğun trafikte `503 UNAVAILABLE` / `429` döndürebilir. AI istemcisi bu **geçici** hataları üstel geri çekilme + jitter ile 5 kez yeniden dener; birincil model hâlâ müsait değilse **yedek model zincirine** düşer (`gemini-2.5-flash` → `gemini-2.0-flash` → `gemini-2.5-flash-lite`); ancak tüm zincir tükenirse **HTTP 503** döner. Kalıcı hatalar (4xx, geçersiz yanıt) ise beklemeden **502** olur. Kod haritası: `app/services/gemini.py` (`_generate`, `_retry_ile_cagir`, `_model_zinciri`).
 - **Pinlenmiş üretim modeli + bounded çıktı** — Kayan `-latest` alias'ı yerine kararlı GA modeli `gemini-2.5-flash` kullanılır. Serbest metin üretimi (mektup) `max_output_tokens` ve istek timeout'u ile sınırlıdır; böylece en pahalı çağrı bile yük altında öngörülebilir kalır (mektup 503'ünün kök nedeni buydu).
@@ -223,6 +238,7 @@ Tüm ayarlar `app/core/config.py`'de tek yerde, tip güvenli tanımlanır ve `.e
 - **12-factor config** — ayarlar env'den, fail-fast doğrulama ile; sağlayıcı sarmalayıcısı (Gemini) sayesinde LLM sağlayıcısı tek dosyadan değişir.
 - **Gözlemlenebilirlik** — yapılandırılmış logging, `/saglik` (liveness) ve `/hazir` (readiness) probe'ları, Docker `HEALTHCHECK`.
 - **Güvenli container** — çok aşamalı (multi-stage) build, root olmayan kullanıcı, ince runtime imajı.
+- **Tam yığın Docker** — tek `docker compose up` ile frontend (nginx, `/api` reverse proxy → CORS'suz), backend ve pgvector birlikte ayağa kalkar.
 
 ---
 

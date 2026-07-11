@@ -18,7 +18,7 @@ def _sahte_ilan(**kw):
 
 
 def test_ilan_analiz_basarili(client, monkeypatch):
-    monkeypatch.setattr(ilan_service, "ilan_olustur", lambda db, metin: _sahte_ilan())
+    monkeypatch.setattr(ilan_service, "ilan_olustur", lambda db, user_id, metin: _sahte_ilan())
     r = client.post("/is-ilani-analiz", json={"metin": "Python backend arıyoruz"})
     assert r.status_code == 201
     assert r.json()["embedding_uretildi"] is True
@@ -30,7 +30,7 @@ def test_ilan_analiz_bos_metin_reddedilir(client):
 
 
 def test_ilan_listesi(client, monkeypatch):
-    monkeypatch.setattr(ilan_service, "ilan_listele", lambda db, limit: [_sahte_ilan()])
+    monkeypatch.setattr(ilan_service, "ilan_listele", lambda db, user_id, limit, offset=0: [_sahte_ilan()])
     r = client.get("/is-ilanlari")
     assert r.status_code == 200
     assert r.json()["toplam_donen"] == 1
@@ -38,7 +38,7 @@ def test_ilan_listesi(client, monkeypatch):
 
 def test_gemini_gecici_mesgulse_503(client, monkeypatch):
     """Gemini geçici olarak meşgulse (retry'lar tükenmiş) -> 503 + dostça mesaj."""
-    def mesgul(db, metin):
+    def mesgul(db, user_id, metin):
         raise ServiceUnavailableError()
 
     monkeypatch.setattr(ilan_service, "ilan_olustur", mesgul)

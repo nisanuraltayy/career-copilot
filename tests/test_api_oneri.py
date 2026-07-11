@@ -12,7 +12,7 @@ def test_oneriler_basarili(client, monkeypatch):
         {"ilan_id": 5, "pozisyon_adi": "Backend Dev", "sirket_adi": "ACME",
          "deneyim_yili": "2 yil", "uyum_skoru": 88.5, "uzaklik": 0.115},
     ]
-    monkeypatch.setattr(oneri_service, "is_onerileri", lambda db, cv_id, limit: (cv, oneriler))
+    monkeypatch.setattr(oneri_service, "is_onerileri", lambda db, user_id, cv_id, limit: (cv, oneriler))
     r = client.get("/is-onerileri/1")
     assert r.status_code == 200
     assert r.json()["toplam_oneri"] == 1
@@ -20,7 +20,7 @@ def test_oneriler_basarili(client, monkeypatch):
 
 
 def test_oneriler_cv_yok_404(client, monkeypatch):
-    def patla(db, cv_id, limit):
+    def patla(db, user_id, cv_id, limit):
         raise ResourceNotFound(f"CV bulunamadı (id={cv_id}).")
 
     monkeypatch.setattr(oneri_service, "is_onerileri", patla)
@@ -29,7 +29,7 @@ def test_oneriler_cv_yok_404(client, monkeypatch):
 
 
 def test_oneriler_embedding_yok_400(client, monkeypatch):
-    def patla(db, cv_id, limit):
+    def patla(db, user_id, cv_id, limit):
         raise BusinessRuleError("Bu CV'nin embedding'i yok.")
 
     monkeypatch.setattr(oneri_service, "is_onerileri", patla)

@@ -56,18 +56,22 @@ def uyum_v1_hesapla(
     }
 
 
-def _cv_ve_ilan_getir(db: Session, cv_id: int, is_ilani_id: int) -> tuple[CVKaydi, IsIlani]:
-    cv = cv_getir(db, cv_id)
+def _cv_ve_ilan_getir(
+    db: Session, user_id: int, cv_id: int, is_ilani_id: int
+) -> tuple[CVKaydi, IsIlani]:
+    cv = cv_getir(db, cv_id, user_id)
     if cv is None:
         raise ResourceNotFound(f"CV bulunamadı (id={cv_id}).")
-    ilan = ilan_getir(db, is_ilani_id)
+    ilan = ilan_getir(db, is_ilani_id, user_id)
     if ilan is None:
         raise ResourceNotFound(f"İş ilanı bulunamadı (id={is_ilani_id}).")
     return cv, ilan
 
 
-def uyum_analizi_yap(db: Session, cv_id: int, is_ilani_id: int) -> UyumAnalizi:
-    cv, ilan = _cv_ve_ilan_getir(db, cv_id, is_ilani_id)
+def uyum_analizi_yap(
+    db: Session, user_id: int, cv_id: int, is_ilani_id: int
+) -> UyumAnalizi:
+    cv, ilan = _cv_ve_ilan_getir(db, user_id, cv_id, is_ilani_id)
 
     cv_beceriler = (cv.analiz or {}).get("beceriler", []) or []
     gerekli = (ilan.analiz or {}).get("gerekli_beceriler", []) or []
@@ -90,6 +94,7 @@ def uyum_analizi_yap(db: Session, cv_id: int, is_ilani_id: int) -> UyumAnalizi:
         }
 
     analiz = UyumAnalizi(
+        user_id=user_id,
         cv_id=cv.id,
         is_ilani_id=ilan.id,
         v1_sonuc=v1_sonuc,
@@ -103,14 +108,16 @@ def uyum_analizi_yap(db: Session, cv_id: int, is_ilani_id: int) -> UyumAnalizi:
 
 def uyum_gecmis(
     db: Session,
+    user_id: int,
     limit: int = 10,
+    offset: int = 0,
     cv_id: int | None = None,
     is_ilani_id: int | None = None,
 ) -> list[UyumAnalizi]:
-    stmt = select(UyumAnalizi)
+    stmt = select(UyumAnalizi).where(UyumAnalizi.user_id == user_id)
     if cv_id is not None:
         stmt = stmt.where(UyumAnalizi.cv_id == cv_id)
     if is_ilani_id is not None:
         stmt = stmt.where(UyumAnalizi.is_ilani_id == is_ilani_id)
-    stmt = stmt.order_by(UyumAnalizi.created_at.desc()).limit(limit)
+    stmt = stmt.order_by(UyumAnalizi.created_at.desc()).offset(offset).limit(limit)
     return list(db.scalars(stmt).all())
