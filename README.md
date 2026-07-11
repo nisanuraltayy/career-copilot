@@ -12,6 +12,10 @@ CV'yi analiz eder, iş ilanlarıyla uyumunu ölçer, en uygun ilanları önerir 
 ![Postgres](https://img.shields.io/badge/PostgreSQL-pgvector-336791)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/nisanuraltayy/career-copilot)
+
+<sub>Düğme backend + pgvector'lü Postgres'i kurar (blueprint: `render.yaml`). Frontend için bkz. [DEPLOYMENT.md](DEPLOYMENT.md).</sub>
+
 </div>
 
 ---
