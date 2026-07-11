@@ -92,6 +92,68 @@ def test_me_mevcut_kullaniciyi_doner(client):
     assert r.json()["email"] == "test@example.com"
 
 
+def test_register_login_refresh_token_dondurur(client, monkeypatch):
+    monkeypatch.setattr(
+        user_service, "kayit_ol",
+        lambda db, email, parola: SimpleNamespace(id=7, email=email),
+    )
+    r = client.post("/auth/register", json={"email": "a@b.com", "parola": "parola12345"})
+    assert r.json()["refresh_token"]  # access + refresh çifti
+
+
+# --- Refresh token + parola değiştirme ---
+
+
+def test_refresh_yeni_token_verir(client, monkeypatch):
+    monkeypatch.setattr(
+        user_service, "kullanici_getir",
+        lambda db, uid: SimpleNamespace(id=uid, is_active=True),
+    )
+    rt = security.refresh_token_uret(5)
+    r = client.post("/auth/refresh", json={"refresh_token": rt})
+    assert r.status_code == 200
+    assert r.json()["access_token"] and r.json()["refresh_token"]
+
+
+def test_refresh_gecersiz_token_401(client):
+    r = client.post("/auth/refresh", json={"refresh_token": "bozuk.token"})
+    assert r.status_code == 401
+
+
+def test_access_ve_refresh_token_ayrisir():
+    at = security.token_uret(1)  # access
+    rt = security.refresh_token_uret(1)
+    # access, refresh yerine kullanılamaz; refresh, access yerine kullanılamaz.
+    assert security.token_coz(at, beklenen_tip="refresh") is None
+    assert security.token_coz(rt, beklenen_tip="access") is None
+    assert security.token_coz(at, beklenen_tip="access") == 1
+    assert security.token_coz(rt, beklenen_tip="refresh") == 1
+
+
+def test_change_password_204(client, monkeypatch):
+    monkeypatch.setattr(user_service, "parola_degistir", lambda db, user, eski, yeni: None)
+    r = client.post(
+        "/auth/change-password",
+        json={"eski_parola": "eskiparola", "yeni_parola": "yeniparola123"},
+    )
+    assert r.status_code == 204
+
+
+def test_change_password_kisa_parola_422(client):
+    r = client.post(
+        "/auth/change-password", json={"eski_parola": "x", "yeni_parola": "kisa"}
+    )
+    assert r.status_code == 422
+
+
+def test_change_password_tokensiz_401(anon_client):
+    r = anon_client.post(
+        "/auth/change-password",
+        json={"eski_parola": "x", "yeni_parola": "yeniparola123"},
+    )
+    assert r.status_code == 401
+
+
 # --- Endpoint koruması (anon_client: get_current_user ezilmemiş) ---
 
 
@@ -135,3 +197,18 @@ def test_yanlis_parola_autherror_gercek_db(sqlite_db):
     user_service.kayit_ol(sqlite_db, "x@y.com", "parola12345")
     with pytest.raises(AuthError):
         user_service.kimlik_dogrula(sqlite_db, "x@y.com", "yanlis")
+
+
+def test_parola_degistir_gercek_db(sqlite_db):
+    u = user_service.kayit_ol(sqlite_db, "x@y.com", "parola12345")
+    user_service.parola_degistir(sqlite_db, u, "parola12345", "yeniparola99")
+    # yeni parola geçer, eski geçmez
+    assert user_service.kimlik_dogrula(sqlite_db, "x@y.com", "yeniparola99").id == u.id
+    with pytest.raises(AuthError):
+        user_service.kimlik_dogrula(sqlite_db, "x@y.com", "parola12345")
+
+
+def test_parola_degistir_yanlis_eski_autherror(sqlite_db):
+    u = user_service.kayit_ol(sqlite_db, "x@y.com", "parola12345")
+    with pytest.raises(AuthError):
+        user_service.parola_degistir(sqlite_db, u, "yanliseskisi", "yeniparola99")

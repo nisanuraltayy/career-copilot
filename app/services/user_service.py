@@ -3,7 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import AuthError, ConflictError
+from app.core.exceptions import AuthError, BusinessRuleError, ConflictError
 from app.core.logging import get_logger
 from app.core.security import hash_parola, parola_dogrula
 from app.db.models import User
@@ -38,3 +38,15 @@ def kimlik_dogrula(db: Session, email: str, parola: str) -> User:
     if not user.is_active:
         raise AuthError("Hesap pasif.")
     return user
+
+
+def parola_degistir(db: Session, user: User, eski: str, yeni: str) -> None:
+    """Giriş yapmış kullanıcının parolasını değiştirir (eski parola doğrulanır)."""
+    if not parola_dogrula(eski, user.hashed_password):
+        raise AuthError("Mevcut parola hatalı.")
+    if eski == yeni:
+        raise BusinessRuleError("Yeni parola eskisiyle aynı olamaz.")
+    user.hashed_password = hash_parola(yeni)
+    db.add(user)
+    db.commit()
+    logger.info("password_changed", extra={"user_id": user.id})

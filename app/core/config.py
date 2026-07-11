@@ -98,7 +98,8 @@ class Settings(BaseSettings):
     # (Aşağıda production'da varsayılan değere izin vermeyen bir doğrulama var.)
     jwt_secret: str = "dev-insecure-change-me-in-prod"
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 60 * 24  # 24 saat
+    jwt_expire_minutes: int = 60  # access token: 1 saat (kısa ömürlü)
+    jwt_refresh_expire_minutes: int = 60 * 24 * 30  # refresh token: 30 gün
 
     # --- Rate limiting ---
     rate_limit_enabled: bool = True
