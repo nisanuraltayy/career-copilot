@@ -14,7 +14,9 @@ CV'yi analiz eder, iş ilanlarıyla uyumunu ölçer, en uygun ilanları önerir 
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/nisanuraltayy/career-copilot)
 
-<sub>Düğme backend + pgvector'lü Postgres'i kurar (blueprint: `render.yaml`). Frontend için bkz. [DEPLOYMENT.md](DEPLOYMENT.md).</sub>
+**🌐 Canlı demo:** [career-copilot-frontend-3ntf.onrender.com](https://career-copilot-frontend-3ntf.onrender.com) · **API:** [career-copilot-api-p5fs.onrender.com](https://career-copilot-api-p5fs.onrender.com/docs)
+
+<sub>Ücretsiz Render katmanında çalışır — 15 dk hareketsizlikte uyur, ilk istek ~50 sn sürebilir. Düğme backend + pgvector'lü Postgres'i kurar (blueprint: `render.yaml`); tam deploy rehberi: [DEPLOYMENT.md](DEPLOYMENT.md).</sub>
 
 </div>
 
@@ -32,6 +34,7 @@ CV'yi analiz eder, iş ilanlarıyla uyumunu ölçer, en uygun ilanları önerir 
 - [Testler](#testler)
 - [API Referansı](#api-referansı)
 - [Yapılandırma](#yapılandırma)
+- [Deployment](#deployment)
 - [Öne Çıkan Teknik Kararlar](#öne-çıkan-teknik-kararlar)
 
 ---
@@ -179,7 +182,7 @@ pytest --cov           # coverage raporu ile
 ruff check app tests   # statik analiz
 ```
 
-Kapsam: V1 uyum skoru (parametrik), embedding metin kurucular, Gemini JSON temizleme/hata soyutlama, PDF çıkarma, ve tüm endpoint'lerin başarı + hata (404/400/422/502/503) yolları.
+**97 test · %88 coverage.** Kapsam: V1 uyum skoru (parametrik), embedding metin kurucular, Gemini JSON temizleme/hata soyutlama, PDF çıkarma, auth (register/login/refresh/parola değiştirme, gerçek SQLite entegrasyon testleri dahil), rate limiting, request-ID middleware, ve tüm endpoint'lerin başarı + hata (401/404/400/422/502/503) yolları.
 
 ## API Referansı
 
@@ -190,8 +193,10 @@ Kapsam: V1 uyum skoru (parametrik), embedding metin kurucular, Gemini JSON temiz
 | GET | `/` | Kök — servis durumu |
 | GET | `/saglik` | Liveness (süreç ayakta mı?) |
 | GET | `/hazir` | Readiness (DB dahil bağımlılıklar hazır mı?) |
-| POST | `/auth/register` | Kayıt ol → JWT token |
-| POST | `/auth/login` | Giriş yap → JWT token |
+| POST | `/auth/register` | Kayıt ol → access + refresh token |
+| POST | `/auth/login` | Giriş yap → access + refresh token |
+| POST | `/auth/refresh` | Refresh token ile yeni token çifti al (rotasyon) |
+| POST | `/auth/change-password` 🔒 | Parola değiştir (eski parola doğrulanır) |
 | GET | `/auth/me` 🔒 | Mevcut kullanıcı |
 | POST | `/cv-yukle` 🔒 | PDF CV yükle ve analiz et |
 | GET | `/cv-gecmis` 🔒 | Yüklenen CV'leri listele (limit/offset) |
@@ -221,16 +226,28 @@ Tüm ayarlar `app/core/config.py`'de tek yerde, tip güvenli tanımlanır ve `.e
 | `GEMINI_API_KEY` | — (zorunlu) | Google Gemini API anahtarı |
 | `ENVIRONMENT` | `development` | `production`'da `/docs` kapanır |
 | `JWT_SECRET` | dev default | Token imzalama anahtarı — **production'da zorunlu** (fail-fast) |
+| `JWT_EXPIRE_MINUTES` | `60` | Access token ömrü (kısa) |
+| `JWT_REFRESH_EXPIRE_MINUTES` | `43200` (30 gün) | Refresh token ömrü |
 | `RATE_LIMIT_AI` | `20/minute` | AI endpoint'leri için IP başına limit |
 | `LOG_JSON` | `false` | Log agregasyonu için JSON log |
 | `CORS_ORIGINS` | localhost:5173 | Virgülle ayrılmış izinli origin'ler |
 | `EMBEDDING_DIM` | `3072` | Embedding boyutu (bkz. vektör index notu) |
 | `MAX_UPLOAD_BYTES` | `10485760` | Yükleme boyut limiti (10 MB) |
 
+## Deployment
+
+Proje [Render](https://render.com)'da **ücretsiz katmanda** canlıdır (backend + frontend + pgvector'lü Postgres). Kendi kopyanı deploy etmek için:
+
+1. Yukarıdaki **Deploy to Render** düğmesine tıkla → `render.yaml` blueprint'i backend + veritabanını otomatik kurar.
+2. Frontend'i ayrı bir **Static Site** olarak deploy et, `VITE_API_URL`'i backend URL'ine ayarla.
+3. Backend'in `CORS_ORIGINS`'ini frontend URL'i ile güncelle.
+
+Adım adım detaylar, ortam değişkenleri ve alternatif platformlar (Railway, Fly.io, VPS) için: **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
 ## Öne Çıkan Teknik Kararlar
 
 - **Katmanlı mimari** — router/service/schema/db ayrımı; iş mantığı HTTP'den bağımsız, birim test edilebilir (saf fonksiyonlar).
-- **JWT auth + multi-tenancy** — bcrypt parola hash'i, HS256 token; her kaynak `user_id`'ye bağlı ve sorgular kullanıcıya göre kapsanır (bir kullanıcı diğerinin verisini göremez). `app/core/security.py`, `app/core/deps.py`.
+- **JWT auth + multi-tenancy** — bcrypt parola hash'i, kısa ömürlü access + uzun ömürlü refresh token ayrımı (`type` claim'i ile birbirinin yerine kullanılamaz), token rotasyonu. Her kaynak `user_id`'ye bağlı ve sorgular kullanıcıya göre kapsanır (bir kullanıcı diğerinin verisini göremez). `app/core/security.py`, `app/core/deps.py`.
 - **Rate limiting + gözlemlenebilirlik** — AI endpoint'lerinde IP başına limit (slowapi); her istek için `X-Request-ID` korelasyon kimliği loglara ve yanıta işlenir; güvenlik başlıkları.
 - **Merkezî hata yönetimi** — servisler domain hatası fırlatır, tek handler HTTP'ye çevirir. Tutarlı `{error: {code, message}}` gövdesi; stack trace asla sızmaz.
 - **Geçici hatalara dayanıklılık (retry + model fallback)** — Google yoğun trafikte `503 UNAVAILABLE` / `429` döndürebilir. AI istemcisi bu **geçici** hataları üstel geri çekilme + jitter ile 5 kez yeniden dener; birincil model hâlâ müsait değilse **yedek model zincirine** düşer (`gemini-2.5-flash` → `gemini-2.0-flash` → `gemini-2.5-flash-lite`); ancak tüm zincir tükenirse **HTTP 503** döner. Kalıcı hatalar (4xx, geçersiz yanıt) ise beklemeden **502** olur. Kod haritası: `app/services/gemini.py` (`_generate`, `_retry_ile_cagir`, `_model_zinciri`).
