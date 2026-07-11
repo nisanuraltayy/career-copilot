@@ -214,7 +214,8 @@ Tüm ayarlar `app/core/config.py`'de tek yerde, tip güvenli tanımlanır ve `.e
 
 - **Katmanlı mimari** — router/service/schema/db ayrımı; iş mantığı HTTP'den bağımsız, birim test edilebilir (saf fonksiyonlar).
 - **Merkezî hata yönetimi** — servisler domain hatası fırlatır, tek handler HTTP'ye çevirir. Tutarlı `{error: {code, message}}` gövdesi; stack trace asla sızmaz.
-- **Geçici hatalara dayanıklılık (retry + backoff)** — Google yoğun trafikte `503 UNAVAILABLE` / `429` döndürebilir. AI istemcisi bu **geçici** hataları üstel geri çekilme + jitter ile 5 kez yeniden dener; tükenirse **HTTP 503** ve dostça bir mesaj döner. Kalıcı hatalar (4xx, geçersiz yanıt) ise beklemeden **502** olur. Kod haritası: `app/services/gemini.py` (`_retry_ile_cagir`, `_gecici_mi`).
+- **Geçici hatalara dayanıklılık (retry + model fallback)** — Google yoğun trafikte `503 UNAVAILABLE` / `429` döndürebilir. AI istemcisi bu **geçici** hataları üstel geri çekilme + jitter ile 5 kez yeniden dener; birincil model hâlâ müsait değilse **yedek model zincirine** düşer (`gemini-2.5-flash` → `gemini-2.0-flash` → `gemini-2.5-flash-lite`); ancak tüm zincir tükenirse **HTTP 503** döner. Kalıcı hatalar (4xx, geçersiz yanıt) ise beklemeden **502** olur. Kod haritası: `app/services/gemini.py` (`_generate`, `_retry_ile_cagir`, `_model_zinciri`).
+- **Pinlenmiş üretim modeli + bounded çıktı** — Kayan `-latest` alias'ı yerine kararlı GA modeli `gemini-2.5-flash` kullanılır. Serbest metin üretimi (mektup) `max_output_tokens` ve istek timeout'u ile sınırlıdır; böylece en pahalı çağrı bile yük altında öngörülebilir kalır (mektup 503'ünün kök nedeni buydu).
 - **Alembic migration'ları** — versiyonlu, geri alınabilir şema; production'da `create_all` yok.
 - **Referans bütünlüğü** — `ForeignKey` + `ON DELETE CASCADE` ve indexli FK kolonları.
 - **Hibrit uyum analizi** — V1 (deterministik) her zaman çalışır; V2 (LLM) patlarsa V1'e düşer (graceful degradation).

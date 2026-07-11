@@ -17,6 +17,7 @@ anahtarı olmadan da import edilebilir.
 """
 
 import json
+import math
 import random
 import time
 from collections.abc import Callable
@@ -43,7 +44,21 @@ _GECICI_KODLAR = frozenset({429, 500, 502, 503, 504})
 
 @lru_cache
 def _client() -> genai.Client:
-    return genai.Client(api_key=settings.gemini_api_key)
+    # Per-request HTTP timeout: uzayan/asılı üretimi sınırlar (özellikle uzun
+    # serbest metin üretiminde kritik).
+    return genai.Client(
+        api_key=settings.gemini_api_key,
+        http_options=types.HttpOptions(timeout=settings.gemini_request_timeout_ms),
+    )
+
+
+def _model_zinciri(birincil: str) -> list[str]:
+    """Birincil model + yapılandırılmış fallback modelleri (tekrarsız sıra)."""
+    zincir = [birincil]
+    for m in settings.gemini_fallback_models:
+        if m and m not in zincir:
+            zincir.append(m)
+    return zincir
 
 
 def _gecici_mi(hata: Exception) -> bool:
@@ -117,6 +132,43 @@ def _retry_ile_cagir(fn: Callable[[], T], islem: str) -> T:
     raise UpstreamServiceError() from son_hata
 
 
+def tahmini_token(metin: str) -> int:
+    """Kaba token tahmini (~4 karakter/token).
+
+    Kesin değil; gözlemlenebilirlik ve boyut koruması için yeterli bir üst-kaba
+    tahmindir. Gerçek tokenizasyon modele göre değişir.
+    """
+    return math.ceil(len(metin) / 4)
+
+
+def _log_prompt(islem: str, model: str, prompt: str) -> None:
+    """Her istekten önce model ve prompt boyutunu loglar (kök-neden görünürlüğü).
+
+    503/timeout gibi sorunlarda hangi çağrının ne kadar büyük prompt gönderdiğini
+    görmek için kritik — bu loglama olmadan boyut sorunları görünmezdi.
+    """
+    karakter = len(prompt)
+    logger.info(
+        "gemini_request",
+        extra={
+            "islem": islem,
+            "model": model,
+            "prompt_chars": karakter,
+            "prompt_tokens_est": tahmini_token(prompt),
+        },
+    )
+    if karakter > settings.max_prompt_chars:
+        logger.warning(
+            "gemini_prompt_over_budget",
+            extra={
+                "islem": islem,
+                "model": model,
+                "prompt_chars": karakter,
+                "limit_chars": settings.max_prompt_chars,
+            },
+        )
+
+
 def _strip_json_fence(metin: str) -> str:
     """Modelin döndürdüğü ```json ... ``` çitini temizler."""
     metin = metin.strip()
@@ -127,17 +179,54 @@ def _strip_json_fence(metin: str) -> str:
     return metin
 
 
+def _generate(
+    prompt: str,
+    birincil_model: str,
+    islem: str,
+    config: "types.GenerateContentConfig | None" = None,
+):
+    """İçerik üretir; retry (iç döngü) + model fallback (dış döngü) uygular.
+
+    Bir model geçici olarak müsait değilse (retry'lar tükenip 503 olursa),
+    zincirdeki bir sonraki modele geçilir — "high demand" tek modeli vurduğunda
+    endpoint tamamen düşmez. Tüm modeller tükenirse `ServiceUnavailableError`.
+    Kalıcı hata (`UpstreamServiceError`, örn. 4xx) fallback tetiklemez, hemen
+    yükselir.
+    """
+    zincir = _model_zinciri(birincil_model)
+    for idx, model in enumerate(zincir):
+        _log_prompt(islem, model, prompt)
+        try:
+            return _retry_ile_cagir(
+                lambda m=model: _client().models.generate_content(
+                    model=m, contents=prompt, config=config
+                ),
+                islem=f"{islem}[{model}]",
+            )
+        except ServiceUnavailableError:
+            if idx < len(zincir) - 1:
+                logger.warning(
+                    "gemini_model_fallback",
+                    extra={
+                        "islem": islem,
+                        "from_model": model,
+                        "to_model": zincir[idx + 1],
+                    },
+                )
+                continue
+            raise  # zincirin sonu: gerçekten müsait değil -> 503
+    raise ServiceUnavailableError()  # ulaşılmaz (zincir en az 1 model)
+
+
 def json_uret(prompt: str, model: str | None = None) -> dict:
     """Prompt gönder, JSON yanıtı Python dict olarak döndür.
 
-    Geçici API hatası retry ile denenir; tükenirse `ServiceUnavailableError`.
-    Kalıcı hata veya geçersiz JSON -> `UpstreamServiceError`.
+    Geçici hata retry + model fallback ile denenir; hepsi tükenirse
+    `ServiceUnavailableError`. Kalıcı hata veya geçersiz JSON ->
+    `UpstreamServiceError`.
     """
     model = model or settings.gemini_json_model
-    yanit = _retry_ile_cagir(
-        lambda: _client().models.generate_content(model=model, contents=prompt),
-        islem="generate_content(json)",
-    )
+    yanit = _generate(prompt, model, "generate_content(json)")
 
     ham = _strip_json_fence(yanit.text or "")
     try:
@@ -148,12 +237,18 @@ def json_uret(prompt: str, model: str | None = None) -> dict:
 
 
 def metin_uret(prompt: str, model: str | None = None) -> str:
-    """Prompt gönder, düz metin yanıtı döndür. (Geçici hatalarda retry.)"""
+    """Prompt gönder, düz metin yanıtı döndür.
+
+    Serbest metin üretimi (mektup) için çıktı BOYUTU açıkça sınırlanır
+    (`max_output_tokens`): sınırsız üretim, isteği en pahalı ve yük altında ilk
+    atılan (503) çağrı yapar. Bounded + fallback ile mektup dayanıklı hale gelir.
+    """
     model = model or settings.gemini_text_model
-    yanit = _retry_ile_cagir(
-        lambda: _client().models.generate_content(model=model, contents=prompt),
-        islem="generate_content(text)",
+    config = types.GenerateContentConfig(
+        max_output_tokens=settings.gemini_text_max_output_tokens,
+        temperature=settings.gemini_text_temperature,
     )
+    yanit = _generate(prompt, model, "generate_content(text)", config=config)
     return (yanit.text or "").strip()
 
 
