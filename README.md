@@ -264,5 +264,4 @@ Adım adım detaylar, ortam değişkenleri ve alternatif platformlar (Railway, F
 ---
 
 <div align="center">
-<sub>MIT lisansı · Senior backend pratiklerini sergilemek için geliştirilmiş portfolyo projesi</sub>
 </div>
