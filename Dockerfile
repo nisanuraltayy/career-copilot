@@ -49,5 +49,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 ENTRYPOINT ["docker-entrypoint.sh"]
 # --proxy-headers + --forwarded-allow-ips: nginx arkasında gerçek istemci IP'si
 # X-Forwarded-For'dan okunur → rate limiting doğru IP'ye uygulanır.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--proxy-headers", "--forwarded-allow-ips", "*"]
+# ${PORT:-8000}: Render/Railway PORT enjekte eder; lokalde 8000'e düşer.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips '*'"]

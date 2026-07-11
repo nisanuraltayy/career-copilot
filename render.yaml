@@ -1,0 +1,36 @@
+# Render Blueprint — backend API + pgvector'lü PostgreSQL.
+#
+# Kullanım: Render Dashboard → New → Blueprint → bu repoyu seç → Apply.
+# Frontend AYRI bir Static Site olarak deploy edilir (bkz. DEPLOYMENT.md).
+#
+# Not: Migration'lar container başlarken otomatik uygulanır
+# (docker-entrypoint.sh → alembic upgrade head), pgvector extension dahil.
+
+databases:
+  - name: career-copilot-db
+    databaseName: careerdb
+    plan: free
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: career-copilot-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /saglik
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: career-copilot-db
+          property: connectionString
+      - key: GEMINI_API_KEY
+        sync: false            # Dashboard'da elle gir (gizli)
+      - key: JWT_SECRET
+        generateValue: true    # Render güçlü rastgele değer üretir
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_JSON
+        value: "true"
+      - key: CORS_ORIGINS
+        sync: false            # Frontend'in yayınlanan URL'i (deploy sonrası gir)
